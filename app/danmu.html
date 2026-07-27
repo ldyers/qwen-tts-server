@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>抖音弹幕 - Qwen3-TTS</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;background:#0f0f1e;color:#e0e0e0;min-height:100vh;padding:20px}
+.container{max-width:1000px;margin:0 auto}
+.header{display:flex;align-items:center;justify-content:space-between;margin-bottom:24px}
+.header h1{font-size:24px;background:linear-gradient(135deg,#fe2c55,#ff5e7e);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.links a{color:#6c5ce7;text-decoration:none;font-size:14px;margin-left:16px}
+.links a:hover{text-decoration:underline}
+.panel{background:#1a1a2e;border-radius:16px;padding:24px;margin-bottom:20px;border:1px solid #222244}
+.row{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+input[type=text]{flex:1;min-width:200px;background:#12121f;border:1px solid #2a2a4a;border-radius:10px;padding:12px 16px;color:#e0e0e0;font-size:15px;outline:none}
+input[type=text]:focus{border-color:#fe2c55}
+.btn{padding:12px 28px;border:none;border-radius:10px;cursor:pointer;font-size:15px;font-weight:600;transition:all .2s}
+.btn-start{background:linear-gradient(135deg,#fe2c55,#ff5e7e);color:#fff}
+.btn-stop{background:#2a2a4a;color:#e0e0e0}
+.btn:hover{transform:translateY(-1px);filter:brightness(1.1)}
+.btn:disabled{opacity:.4;cursor:not-allowed;transform:none}
+select{background:#12121f;border:1px solid #2a2a4a;border-radius:10px;padding:10px 14px;color:#e0e0e0;font-size:14px;cursor:pointer;outline:none}
+.tts-config{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-top:12px;padding-top:12px;border-top:1px solid #2a2a4a}
+.tts-config label{font-size:13px;color:#888}
+.tts-toggle{display:flex;align-items:center;gap:8px}
+.tts-toggle input[type=checkbox]{width:20px;height:20px;accent-color:#fe2c55;cursor:pointer}
+.stats{display:flex;gap:20px;margin:16px 0}
+.stat-card{flex:1;background:#12121f;border-radius:12px;padding:16px;text-align:center}
+.stat-card .val{font-size:28px;font-weight:700;color:#fe2c55}
+.stat-card .lbl{font-size:12px;color:#666;margin-top:4px}
+.danmu-list{max-height:500px;overflow-y:auto}
+.danmu-list::-webkit-scrollbar{width:6px}
+.danmu-list::-webkit-scrollbar-track{background:#12121f}
+.danmu-list::-webkit-scrollbar-thumb{background:#2a2a4a;border-radius:3px}
+.danmu-item{display:flex;gap:10px;padding:10px 14px;border-radius:10px;margin-bottom:6px;animation:fadeIn .3s ease}
+.danmu-item:hover{background:#12121f}
+.danmu-item .avatar{width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,#6c5ce7,#a29bfe);display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:600;flex-shrink:0}
+.danmu-item .info{flex:1}
+.danmu-item .name{font-size:13px;color:#a29bfe;margin-bottom:2px}
+.danmu-item .text{font-size:15px;color:#e0e0e0}
+.danmu-item .time{font-size:11px;color:#555;flex-shrink:0}
+.danmu-item.tts{border-left:3px solid #00b894}
+@keyframes fadeIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+.status-bar{display:flex;align-items:center;gap:8px;font-size:14px;margin-bottom:16px}
+.dot{width:10px;height:10px;border-radius:50%;background:#555}
+.dot.active{background:#00b894;box-shadow:0 0 8px #00b894;animation:pulse 1.5s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
+.empty{text-align:center;color:#555;padding:60px 0;font-size:15px}
+</style>
+</head>
+<body>
+<div class="container">
+<div class="header">
+  <h1>📺 抖音弹幕</h1>
+  <div class="links">
+    <a href="/webui">🎙️ TTS</a>
+    <a href="/docs-page">📚 文档</a>
+  </div>
+</div>
+
+<div class="panel">
+  <div class="row">
+    <input type="text" id="liveId" placeholder="输入抖音直播间号（如 261378947940）">
+    <button class="btn btn-start" id="startBtn" onclick="startDanmu()">开始抓取</button>
+    <button class="btn btn-stop" id="stopBtn" onclick="stopDanmu()" disabled>停止</button>
+  </div>
+  <div class="tts-config">
+    <div class="tts-toggle">
+      <input type="checkbox" id="ttsEnabled" onchange="updateTTSConfig()">
+      <label for="ttsEnabled">🔊 弹幕自动播报</label>
+    </div>
+    <select id="ttsSpeaker" onchange="updateTTSConfig()">
+      <option value="Serena">Serena 温柔女声</option>
+      <option value="Vivian">Vivian 明亮女声</option>
+      <option value="Uncle_Fu">Uncle_Fu 浑厚男声</option>
+      <option value="Dylan">Dylan 北京男声</option>
+      <option value="Ryan">Ryan 英文男声</option>
+    </select>
+    <select id="ttsLanguage" onchange="updateTTSConfig()">
+      <option value="Chinese">中文</option>
+      <option value="Auto">自动检测</option>
+    </select>
+    <label>语速</label>
+    <select id="ttsSpeed" onchange="updateTTSConfig()">
+      <option value="1.0">1.0x</option>
+      <option value="1.3">1.3x</option>
+      <option value="1.5">1.5x</option>
+      <option value="0.8">0.8x</option>
+    </select>
+  </div>
+</div>
+
+<div class="stats">
+  <div class="stat-card"><div class="val" id="statTotal">0</div><div class="lbl">弹幕总数</div></div>
+  <div class="stat-card"><div class="val" id="statUsers">0</div><div class="lbl">互动用户</div></div>
+  <div class="stat-card"><div class="val" id="statDuration">00:00</div><div class="lbl">运行时长</div></div>
+</div>
+
+<div class="status-bar">
+  <div class="dot" id="statusDot"></div>
+  <span id="statusText">未连接</span>
+</div>
+
+<div class="panel">
+  <div class="danmu-list" id="danmuList">
+    <div class="empty">输入直播间号开始抓取弹幕</div>
+  </div>
+</div>
+</div>
+
+<script>
+let ws = null;
+let startTime = null;
+let timerInterval = null;
+
+async function startDanmu() {
+  const liveId = document.getElementById('liveId').value.trim();
+  if (!liveId) return;
+
+  const r = await fetch('/api/v1/danmu/start', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({live_id: liveId})
+  });
+  if (r.ok) {
+    document.getElementById('startBtn').disabled = true;
+    document.getElementById('stopBtn').disabled = false;
+    document.getElementById('statusDot').classList.add('active');
+    document.getElementById('statusText').textContent = '正在抓取: ' + liveId;
+    document.getElementById('danmuList').innerHTML = '';
+    startTime = Date.now();
+    timerInterval = setInterval(updateTimer, 1000);
+    connectWS();
+  }
+}
+
+async function stopDanmu() {
+  await fetch('/api/v1/danmu/stop', {method: 'POST'});
+  document.getElementById('startBtn').disabled = false;
+  document.getElementById('stopBtn').disabled = true;
+  document.getElementById('statusDot').classList.remove('active');
+  document.getElementById('statusText').textContent = '已停止';
+  clearInterval(timerInterval);
+  if (ws) { ws.close(); ws = null; }
+  ttsQueue = []; // 清空 TTS 队列
+  ttsAudio.pause();
+  isPlayingTTS = false;
+}
+
+let ttsQueue = [];
+let isPlayingTTS = false;
+let ttsAudio = new Audio();
+
+function connectWS() {
+  if (ws) ws.close();
+  ws = new WebSocket(`ws://${location.host}/api/v1/danmu/ws`);
+  ws.onmessage = async (e) => {
+    const msg = JSON.parse(e.data);
+    if (msg.type === 'danmu') {
+      addDanmu(msg.data);
+      // 如果 TTS 开启，请求音频并播放
+      if (msg.data.tts_enabled && msg.data.content) {
+        ttsQueue.push(msg.data.content);
+        if (!isPlayingTTS) playNextTTS();
+      }
+    } else if (msg.type === 'status' || msg.type === 'heartbeat') {
+      updateStats(msg.data);
+    }
+  };
+  ws.onclose = () => { ws = null; };
+}
+
+async function playNextTTS() {
+  if (ttsQueue.length === 0) { isPlayingTTS = false; return; }
+  isPlayingTTS = true;
+  const text = ttsQueue.shift();
+  // 限制队列长度
+  if (ttsQueue.length > 5) ttsQueue = ttsQueue.slice(-5);
+
+  try {
+    const speaker = document.getElementById('ttsSpeaker').value;
+    const lang = document.getElementById('ttsLanguage').value;
+    const speed = parseFloat(document.getElementById('ttsSpeed').value);
+    const resp = await fetch('/api/v1/custom-voice/generate', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({text, language: lang, speaker, speed, response_format: 'wav'})
+    });
+    if (resp.ok) {
+      const blob = await resp.blob();
+      ttsAudio.src = URL.createObjectURL(blob);
+      await ttsAudio.play();
+      // 等播放完再播下一条
+      ttsAudio.onended = () => playNextTTS();
+    } else {
+      playNextTTS(); // 失败了跳过
+    }
+  } catch (e) {
+    playNextTTS(); // 出错了跳过
+  }
+}
+
+function addDanmu(d) {
+  const list = document.getElementById('danmuList');
+  if (list.querySelector('.empty')) list.innerHTML = '';
+
+  const item = document.createElement('div');
+  item.className = 'danmu-item' + (d.tts_played ? ' tts' : '');
+  item.innerHTML = `
+    <div class="avatar">${d.user_name.charAt(0)}</div>
+    <div class="info">
+      <div class="name">${d.user_name}</div>
+      <div class="text">${d.content}</div>
+    </div>
+    <div class="time">${d.ts}</div>
+  `;
+  list.insertBefore(item, list.firstChild);
+
+  while (list.children.length > 200) list.removeChild(list.lastChild);
+
+  document.getElementById('statTotal').textContent = parseInt(document.getElementById('statTotal').textContent) + 1;
+}
+
+function updateStats(s) {
+  document.getElementById('statTotal').textContent = s.total;
+  document.getElementById('statUsers').textContent = s.unique_users;
+  if (s.auto_tts !== undefined) document.getElementById('ttsEnabled').checked = s.auto_tts;
+  if (s.tts_speaker) document.getElementById('ttsSpeaker').value = s.tts_speaker;
+}
+
+function updateTimer() {
+  if (!startTime) return;
+  const sec = Math.floor((Date.now() - startTime) / 1000);
+  const m = String(Math.floor(sec / 60)).padStart(2, '0');
+  const s = String(sec % 60).padStart(2, '0');
+  document.getElementById('statDuration').textContent = `${m}:${s}`;
+}
+
+async function updateTTSConfig() {
+  await fetch('/api/v1/danmu/tts-config', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({
+      enabled: document.getElementById('ttsEnabled').checked,
+      speaker: document.getElementById('ttsSpeaker').value,
+      language: document.getElementById('ttsLanguage').value,
+      speed: parseFloat(document.getElementById('ttsSpeed').value),
+    })
+  });
+}
+
+// 页面加载时获取状态
+fetch('/api/v1/danmu/status').then(r => r.json()).then(s => {
+  if (s.is_running) {
+    document.getElementById('startBtn').disabled = true;
+    document.getElementById('stopBtn').disabled = false;
+    document.getElementById('statusDot').classList.add('active');
+    document.getElementById('statusText').textContent = '正在抓取: ' + s.live_id;
+    document.getElementById('liveId').value = s.live_id;
+    startTime = new Date(s.start_time).getTime();
+    timerInterval = setInterval(updateTimer, 1000);
+    connectWS();
+  }
+  if (s.auto_tts) document.getElementById('ttsEnabled').checked = true;
+  if (s.tts_speaker) document.getElementById('ttsSpeaker').value = s.tts_speaker;
+});
+</script>
+</body>
+</html>
