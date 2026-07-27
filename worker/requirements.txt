@@ -1,0 +1,15 @@
+# Worker 专用依赖
+# torch 需要单独安装（带 CUDA）:
+#   pip install torch>=2.1.0 --index-url https://download.pytorch.org/whl/cu121
+# flash-attn 可选:
+#   pip install flash-attn>=2.5.0 --no-build-isolation
+
+qwen-tts>=0.0.5
+soundfile>=0.12.1
+numpy>=1.24.0
+fastapi>=0.110.0
+uvicorn[standard]>=0.27.0
+pydantic>=2.6.0
+python-multipart>=0.0.9
+sse-starlette>=2.0.0
+httpx>=0.26.0
