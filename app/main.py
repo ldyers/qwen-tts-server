@@ -1,0 +1,244 @@
+"""
+Main FastAPI application
+"""
+import logging
+from pathlib import Path
+from contextlib import asynccontextmanager
+import numpy as np
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
+from app import __version__
+from app.config import settings
+from app.models.manager import model_manager
+from app.routers import health, custom_voice, voice_design, base, danmu
+
+# Configure logging
+logging.basicConfig(
+    level=getattr(logging, settings.log_level.upper()),
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+)
+logger = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """
+    Application lifespan handler
+    """
+    logger.info("Starting Qwen3-TTS API Server")
+    logger.info(f"Version: {__version__}")
+
+    if settings.remote_mode:
+        # 远程模式：检查 Worker 连通性，不做本地 warmup
+        logger.info(f"Remote mode: checking GPU Worker at {settings.worker_url}...")
+        try:
+            import httpx
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                headers = {}
+                if settings.worker_api_key:
+                    headers["X-Worker-Key"] = settings.worker_api_key
+                resp = await client.get(
+                    f"{settings.worker_url}/health",
+                    headers=headers,
+                )
+                if resp.status_code == 200:
+                    health = resp.json()
+                    logger.info(f"✓ GPU Worker healthy: {health}")
+                else:
+                    logger.warning(f"GPU Worker responded with status {resp.status_code}")
+        except Exception as e:
+            logger.warning(f"Cannot reach GPU Worker at {settings.worker_url}: {e}")
+            logger.warning("Server will start anyway, but TTS requests will fail until Worker is available")
+    elif settings.preload_models:
+        # 本地模式：预加载模型
+        logger.info("Preloading models on startup...")
+        model_manager.preload_all_models()
+
+        # Run warmup if enabled
+        if settings.enable_warmup:
+            await warmup_models()
+    else:
+        logger.info("Models will be loaded on first request (lazy loading)")
+
+    yield
+
+    logger.info("Shutting down Qwen3-TTS API Server")
+
+
+async def warmup_models():
+    """
+    Warm up loaded models with test generations
+    """
+    logger.info("Running model warmup...")
+    
+    try:
+        # Warmup CustomVoice if loaded
+        if model_manager.is_loaded("custom_voice"):
+            logger.info("Warming up CustomVoice model...")
+            model = model_manager.get_custom_voice_model()
+            _ = model.generate_custom_voice(
+                text=settings.warmup_text,
+                language="Auto",
+                speaker="Ryan",
+                instruct="",
+            )
+            logger.info("CustomVoice model warmed up")
+        
+        # Warmup VoiceDesign if loaded
+        if model_manager.is_loaded("voice_design"):
+            logger.info("Warming up VoiceDesign model...")
+            model = model_manager.get_voice_design_model()
+            _ = model.generate_voice_design(
+                text=settings.warmup_text,
+                language="Auto",
+                instruct="A clear professional voice",
+            )
+            logger.info("VoiceDesign model warmed up")
+        
+        # Warmup Base model if loaded (requires creating a dummy voice prompt)
+        if model_manager.is_loaded("base"):
+            logger.info("Warming up Base model...")
+            model = model_manager.get_base_model()
+            
+            # Create a simple sine wave as dummy reference audio
+            duration = 1.0  # 1 second
+            sample_rate = 24000
+            frequency = 440.0  # A4 note
+            t = np.linspace(0, duration, int(sample_rate * duration))
+            dummy_audio = np.sin(2 * np.pi * frequency * t).astype(np.float32)
+            
+            # Create dummy voice prompt
+            dummy_prompt = model.create_voice_clone_prompt(
+                ref_audio=(dummy_audio, sample_rate),
+                ref_text=settings.warmup_text,
+                x_vector_only_mode=False,
+            )
+            
+            # Generate with dummy prompt
+            _ = model.generate_voice_clone(
+                text=settings.warmup_text,
+                language="Auto",
+                voice_clone_prompt=dummy_prompt,
+            )
+            logger.info("Base model warmed up")
+        
+        logger.info("Model warmup complete")
+        
+    except Exception as e:
+        logger.warning(f"Warmup failed (non-critical): {e}")
+
+
+# Create FastAPI application
+app = FastAPI(
+    title="Qwen3-TTS API Server",
+    description="API server for Qwen3-TTS models supporting CustomVoice, VoiceDesign, and Base (voice cloning) models",
+    version=__version__,
+    lifespan=lifespan,
+    # Disable docs in production
+    docs_url="/docs" if settings.env == "development" else None,
+    redoc_url="/redoc" if settings.env == "development" else None,
+    openapi_url="/openapi.json" if settings.env == "development" else None,
+)
+
+# Add CORS middleware
+_cors_origins = settings.cors_origins.split(",") if settings.cors_origins else ["*"]
+_use_credentials = "*" not in _cors_origins  # Credentials not allowed with wildcard
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_cors_origins,
+    allow_credentials=_use_credentials,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Mount React app static assets (built frontend)
+react_dist_dir = Path(__file__).parent.parent / "frontend" / "dist"
+if react_dist_dir.exists():
+    # Mount assets folder for CSS/JS bundles
+    assets_dir = react_dist_dir / "assets"
+    if assets_dir.exists():
+        app.mount("/assets", StaticFiles(directory=str(assets_dir)), name="react-assets")
+        logger.info(f"React assets mounted from {assets_dir}")
+
+# Include routers
+app.include_router(health.router)
+app.include_router(custom_voice.router)
+app.include_router(voice_design.router)
+app.include_router(base.router)
+app.include_router(danmu.router)
+
+
+@app.get("/demo")
+async def demo_page():
+    """Redirect /demo to root (React app)"""
+    return FileResponse(
+        Path(__file__).parent.parent / "frontend" / "dist" / "index.html",
+        media_type="text/html"
+    )
+
+
+@app.get("/webui")
+async def webui_page():
+    """Serve the simple TTS WebUI"""
+    return FileResponse(
+        Path(__file__).parent / "webui.html",
+        media_type="text/html"
+    )
+
+
+@app.get("/danmu")
+async def danmu_page():
+    """Serve the danmu (live chat) page"""
+    return FileResponse(
+        Path(__file__).parent / "danmu.html",
+        media_type="text/html"
+    )
+
+
+@app.get("/danmu-tts")
+async def danmu_tts_page():
+    """弹幕TTS播报页面"""
+    return FileResponse(
+        Path(__file__).parent / "danmu_tts.html",
+        media_type="text/html"
+    )
+
+
+@app.get("/docs-page")
+async def docs_page():
+    """Serve the documentation page"""
+    return FileResponse(
+        Path(__file__).parent / "docs.html",
+        media_type="text/html"
+    )
+
+
+@app.get("/")
+async def root():
+    """Serve React app or API information"""
+    react_index = Path(__file__).parent.parent / "frontend" / "dist" / "index.html"
+    if react_index.exists():
+        return FileResponse(react_index, media_type="text/html")
+    
+    # Fallback to API info if React app not built
+    return {
+        "name": "Qwen3-TTS API Server",
+        "version": __version__,
+        "message": "React app not built. Run 'npm run build' in frontend/ directory",
+        "demo_legacy": "/demo-legacy",
+        "docs": "/docs",
+        "redoc": "/redoc",
+        "openapi": "/openapi.json",
+    }
+
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(
+        "app.main:app",
+        host=settings.host,
+        port=settings.port,
+        reload=False,
+    )
