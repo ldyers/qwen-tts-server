@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Qwen3-TTS 语音合成</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;background:#0f0f1e;color:#e0e0e0;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px}
+.container{max-width:680px;width:100%;background:#1a1a2e;border-radius:20px;padding:40px;box-shadow:0 8px 40px rgba(0,0,0,.4)}
+h1{text-align:center;font-size:28px;margin-bottom:8px;background:linear-gradient(135deg,#6c5ce7,#a29bfe);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.subtitle{text-align:center;color:#666;font-size:14px;margin-bottom:32px}
+.form-group{margin-bottom:24px}
+label{display:block;font-size:14px;color:#a0a0b0;margin-bottom:8px;font-weight:500}
+select,textarea,input[type=text]{width:100%;background:#12121f;border:1px solid #2a2a4a;border-radius:12px;padding:14px 16px;color:#e0e0e0;font-size:15px;outline:none;transition:border-color .2s}
+select:focus,textarea:focus,input:focus{border-color:#6c5ce7}
+textarea{resize:vertical;min-height:100px;font-family:inherit}
+select{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%236c5ce7' stroke-width='3'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 16px center}
+.row{display:flex;gap:16px}
+.row .form-group{flex:1}
+.slider-wrap{display:flex;align-items:center;gap:16px}
+input[type=range]{flex:1;-webkit-appearance:none;height:6px;background:#2a2a4a;border-radius:3px;outline:none}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:20px;height:20px;background:#6c5ce7;border-radius:50%;cursor:pointer}
+input[type=range]::-moz-range-thumb{width:20px;height:20px;background:#6c5ce7;border-radius:50%;cursor:pointer;border:none}
+.speed-value{min-width:48px;text-align:center;font-size:16px;font-weight:600;color:#a29bfe}
+.btn{width:100%;padding:16px;font-size:17px;font-weight:600;border:none;border-radius:12px;cursor:pointer;transition:all .2s;background:linear-gradient(135deg,#6c5ce7,#a29bfe);color:#fff}
+.btn:hover{transform:translateY(-2px);box-shadow:0 6px 20px rgba(108,92,231,.4)}
+.btn:active{transform:translateY(0)}
+.btn:disabled{opacity:.5;cursor:not-allowed;transform:none}
+.audio-section{margin-top:28px;display:none}
+.audio-section.active{display:block}
+.audio-player{width:100%;margin-top:12px}
+.audio-player audio{width:100%}
+.status{margin-top:12px;font-size:14px;text-align:center;min-height:20px}
+.status.loading{color:#fdcb6e}
+.status.success{color:#00b894}
+.status.error{color:#e17055}
+.spinner{display:inline-block;width:16px;height:16px;border:2px solid #2a2a4a;border-top-color:#6c5ce7;border-radius:50%;animation:spin .6s linear infinite;margin-right:8px;vertical-align:middle}
+@keyframes spin{to{transform:rotate(360deg)}}
+.history{margin-top:24px;border-top:1px solid #2a2a4a;padding-top:20px}
+.history-title{font-size:14px;color:#666;margin-bottom:12px}
+.history-item{display:flex;align-items:center;gap:12px;padding:10px 14px;background:#12121f;border-radius:10px;margin-bottom:8px;cursor:pointer;transition:background .2s}
+.history-item:hover{background:#1a1a30}
+.history-item .icon{font-size:20px}
+.history-item .text{flex:1;font-size:13px;color:#888;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.history-item .time{font-size:12px;color:#555}
+</style>
+</head>
+<body>
+<div class="container">
+<h1>🔊 Qwen3-TTS</h1>
+<p class="subtitle">VPS → WireGuard → RTX 3060 GPU 推理 · <a href="/danmu-tts" style="color:#fe2c55;text-decoration:none">📢 弹幕播报</a> · <a href="/docs-page" style="color:#6c5ce7;text-decoration:none">📚 使用文档</a></p>
+
+<div class="form-group">
+  <label>音色选择</label>
+  <select id="speaker">
+    <option value="Serena">Serena — 温柔女声（中文）</option>
+    <option value="Vivian">Vivian — 明亮女声（中文）</option>
+    <option value="Uncle_Fu">Uncle_Fu — 浑厚男声（中文）</option>
+    <option value="Dylan">Dylan — 北京男声（中文）</option>
+    <option value="Eric">Eric — 成都男声（四川话）</option>
+    <option value="Ryan">Ryan — 活力男声（英文）</option>
+    <option value="Aiden">Aiden — 阳光男声（英文）</option>
+    <option value="Ono_Anna">Ono_Anna — 俏皮女声（日语）</option>
+    <option value="Sohee">Sohee — 温暖女声（韩语）</option>
+  </select>
+</div>
+
+<div class="row">
+  <div class="form-group">
+    <label>语言</label>
+    <select id="language">
+      <option value="Auto">自动检测</option>
+      <option value="Chinese" selected>中文</option>
+      <option value="English">English</option>
+      <option value="Japanese">日本語</option>
+      <option value="Korean">한국어</option>
+    </select>
+  </div>
+  <div class="form-group">
+    <label>语速</label>
+    <div class="slider-wrap">
+      <input type="range" id="speed" min="0.5" max="2.0" step="0.1" value="1.0">
+      <span class="speed-value" id="speedVal">1.0x</span>
+    </div>
+  </div>
+</div>
+
+<div class="form-group">
+  <label>合成文本</label>
+  <textarea id="text" placeholder="输入要合成的文字...">我是烤鸭哥。</textarea>
+</div>
+
+<button class="btn" id="generateBtn" onclick="generate()">
+  🎙️ 生成语音
+</button>
+
+<div class="status" id="status"></div>
+
+<div class="audio-section" id="audioSection">
+  <label>🔊 生成结果</label>
+  <div class="audio-player">
+    <audio id="audioPlayer" controls></audio>
+  </div>
+  <button class="btn" style="margin-top:12px;background:#2a2a4a;font-size:14px" onclick="downloadAudio()">⬇️ 下载 WAV</button>
+</div>
+
+<div class="history" id="historySection" style="display:none">
+  <div class="history-title">📜 历史记录</div>
+  <div id="historyList"></div>
+</div>
+</div>
+
+<script>
+let currentBlob = null;
+let history = [];
+
+const speedSlider = document.getElementById('speed');
+const speedVal = document.getElementById('speedVal');
+speedSlider.oninput = () => speedVal.textContent = parseFloat(speedSlider.value).toFixed(1) + 'x';
+
+async function generate() {
+  const text = document.getElementById('text').value.trim();
+  if (!text) { showStatus('请输入文本', 'error'); return; }
+
+  const speaker = document.getElementById('speaker').value;
+  const language = document.getElementById('language').value;
+  const speed = parseFloat(speedSlider.value);
+
+  const btn = document.getElementById('generateBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> 生成中...';
+  showStatus('正在发送请求到 GPU Worker...', 'loading');
+  document.getElementById('audioSection').classList.remove('active');
+
+  const t0 = performance.now();
+  try {
+    const resp = await fetch('/api/v1/custom-voice/generate', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ text, language, speaker, speed, response_format: 'wav' })
+    });
+
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({detail: resp.statusText}));
+      throw new Error(err.detail || 'Server error');
+    }
+
+    const blob = await resp.blob();
+    currentBlob = blob;
+    const url = URL.createObjectURL(blob);
+    const audio = document.getElementById('audioPlayer');
+    audio.src = url;
+
+    const elapsed = ((performance.now() - t0) / 1000).toFixed(1);
+    const sizeKB = (blob.size / 1024).toFixed(0);
+    showStatus(`✅ 生成完成 — ${elapsed}s | ${sizeKB}KB`, 'success');
+    document.getElementById('audioSection').classList.add('active');
+    audio.play();
+
+    // 添加到历史
+    addHistory(text, speaker, url, elapsed);
+  } catch (e) {
+    showStatus('❌ ' + e.message, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '🎙️ 生成语音';
+  }
+}
+
+function showStatus(msg, type) {
+  const s = document.getElementById('status');
+  s.textContent = msg;
+  s.className = 'status ' + type;
+}
+
+function downloadAudio() {
+  if (!currentBlob) return;
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(currentBlob);
+  a.download = `tts_${Date.now()}.wav`;
+  a.click();
+}
+
+function addHistory(text, speaker, url, time) {
+  history.unshift({ text, speaker, url, time, ts: new Date() });
+  if (history.length > 10) history.pop();
+  renderHistory();
+}
+
+function renderHistory() {
+  const sec = document.getElementById('historySection');
+  const list = document.getElementById('historyList');
+  if (history.length === 0) { sec.style.display = 'none'; return; }
+  sec.style.display = 'block';
+  list.innerHTML = history.map((h, i) => `
+    <div class="history-item" onclick="playHistory(${i})">
+      <span class="icon">${{'Serena':'👩','Vivian':'👩','Uncle_Fu':'👨','Dylan':'👨','Eric':'👨','Ryan':'👨','Aiden':'👨','Ono_Anna':'👩','Sohee':'👩'}[h.speaker]||'🎤'}</span>
+      <span class="text">${h.text}</span>
+      <span class="time">${h.time}s</span>
+    </div>
+  `).join('');
+}
+
+function playHistory(i) {
+  const h = history[i];
+  const audio = document.getElementById('audioPlayer');
+  audio.src = h.url;
+  audio.play();
+  document.getElementById('audioSection').classList.add('active');
+}
+
+// Ctrl+Enter 快捷键
+document.getElementById('text').addEventListener('keydown', e => {
+  if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') generate();
+});
+</script>
+</body>
+</html>
