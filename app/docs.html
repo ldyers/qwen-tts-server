@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Qwen3-TTS 使用文档</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;background:#0f0f1e;color:#e0e0e0;line-height:1.7;padding:20px}
+.wrap{max-width:800px;margin:0 auto}
+.header{display:flex;align-items:center;justify-content:space-between;margin-bottom:32px}
+.header h1{font-size:24px;background:linear-gradient(135deg,#6c5ce7,#a29bfe);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.back-btn{padding:8px 20px;background:#2a2a4a;color:#a29bfe;border-radius:8px;text-decoration:none;font-size:14px;transition:background .2s}
+.back-btn:hover{background:#3a3a5a}
+.card{background:#1a1a2e;border-radius:14px;padding:28px;margin-bottom:20px;border:1px solid #222244}
+.card h2{font-size:19px;color:#a29bfe;margin-bottom:16px;display:flex;align-items:center;gap:8px}
+.card h3{font-size:15px;color:#6c5ce7;margin:20px 0 10px}
+.card p{color:#b0b0c0;font-size:14px;margin-bottom:10px}
+.card ul,.card ol{margin:8px 0 16px 20px}
+.card li{color:#b0b0c0;font-size:14px;margin-bottom:6px}
+code{background:#12121f;color:#fdcb6e;padding:2px 8px;border-radius:4px;font-size:13px;font-family:'Fira Code','Consolas',monospace}
+pre{background:#12121f;border:1px solid #2a2a4a;border-radius:10px;padding:16px;overflow-x:auto;margin:12px 0}
+pre code{background:none;color:#e0e0e0;padding:0;font-size:13px;line-height:1.6}
+.kw{color:#a29bfe}.str{color:#00b894}.cmt{color:#636e72}.fn{color:#fdcb6e}.var{color:#e17055}
+.tag{display:inline-block;padding:3px 10px;border-radius:20px;font-size:12px;margin-right:6px}
+.tag-cli{background:#2d3436;color:#74b9ff}.tag-api{background:#2d3436;color:#55efc4}.tag-perf{background:#2d3436;color:#ffeaa7}
+.note{background:#1e1e3a;border-left:3px solid #6c5ce7;padding:12px 16px;border-radius:0 8px 8px 0;margin:12px 0;font-size:13px;color:#a0a0b0}
+.note.warn{border-left-color:#e17055}
+table{width:100%;border-collapse:collapse;margin:12px 0}
+th,td{padding:10px 14px;text-align:left;border-bottom:1px solid #2a2a4a;font-size:13px}
+th{color:#a29bfe;font-weight:600}
+td{color:#b0b0c0}
+</style>
+</head>
+<body>
+<div class="wrap">
+<div class="header">
+  <h1>📚 使用文档</h1>
+  <a class="back-btn" href="/webui">← 返回 WebUI</a>
+</div>
+
+<!-- 1. Windows Worker -->
+<div class="card">
+<h2>🖥️ Windows GPU Worker 启动指南</h2>
+
+<h3>前提条件</h3>
+<ul>
+  <li>Windows 10/11 + NVIDIA GPU（≥8GB 显存，推荐 RTX 3060 12GB）</li>
+  <li>Python 3.10+（<strong>不要用 3.14</strong>，PyTorch 不兼容）</li>
+  <li>NVIDIA 驱动已安装（<code>nvidia-smi</code> 可正常输出）</li>
+  <li>WireGuard 隧道已连接（能 <code>ping 10.100.0.1</code>）</li>
+</ul>
+
+<h3>首次安装</h3>
+<pre><code><span class="cmt"># 1. 下载 Worker 文件</span>
+<span class="cmt"># 从 VPS 下载（通过 WireGuard）</span>
+scp ubuntu@<span class="kw">10.100.0.1</span>:/home/ubuntu/qwen-tts-worker.zip C:\qwen-tts-worker.zip
+
+<span class="cmt"># 2. 解压</span>
+mkdir C:\qwen-tts-worker
+cd C:\qwen-tts-worker
+tar -xf ..\qwen-tts-worker.zip --strip-components=1
+
+<span class="cmt"># 3. 创建 Python 3.10 虚拟环境</span>
+py -<span class="kw">3.10</span> -m venv .venv
+
+<span class="cmt"># 4. 安装 PyTorch（CUDA 12.1，约 2.4GB）</span>
+.venv\Scripts\pip install torch==<span class="kw">2.2.1</span> --index-url https://download.pytorch.org/whl/cu121
+
+<span class="cmt"># 5. 安装其余依赖</span>
+.venv\Scripts\pip install -r worker\requirements.txt
+
+<span class="cmt"># 6. 安装匹配的 torchaudio</span>
+.venv\Scripts\pip install <span class="str">"numpy<2"</span> torchaudio==<span class="kw">2.2.1</span> --index-url https://download.pytorch.org/whl/cu121
+
+<span class="cmt"># 7. 预下载模型（约 3.5GB，用镜像加速）</span>
+set HF_ENDPOINT=https://hf-mirror.com
+.venv\Scripts\python worker\download_models.py</code></pre>
+
+<div class="note">
+  <strong>⚠️ 常见坑：</strong>
+  <ul>
+    <li><code>numpy</code> 必须降级到 &lt;2（torch 2.2.1 不兼容 numpy 2.x）</li>
+    <li><code>torchaudio</code> 版本必须和 <code>torch</code> 一致（都是 2.2.1）</li>
+    <li>Flash Attention 在 Windows 上可不装，Worker 会自动回退</li>
+    <li>Windows 需能访问 HuggingFace 或设置镜像 <code>HF_ENDPOINT=https://hf-mirror.com</code></li>
+  </ul>
+</div>
+
+<h3>日常启动</h3>
+<pre><code><span class="cmt"># 方式1：双击 bat 文件</span>
+C:\qwen-tts-worker\run_worker.bat
+
+<span class="cmt"># 方式2：命令行启动（懒加载模式，推荐）</span>
+cd C:\qwen-tts-worker
+set HF_ENDPOINT=https://hf-mirror.com
+.venv\Scripts\python worker\start_worker.py --host <span class="kw">0.0.0.0</span> --port <span class="kw">8001</span> --device cuda:<span class="kw">0</span>
+
+<span class="cmt"># 方式3：预加载模式（启动时加载模型，首次请求更快）</span>
+.venv\Scripts\python worker\start_worker.py --preload
+
+<span class="cmt"># 方式4：开机自启（Windows 计划任务）</span>
+schtasks /create /tn QwenWorker /tr C:\qwen-tts-worker\run_worker.bat /sc onstart /ru Administrator /f
+schtasks /run /tn QwenWorker</code></pre>
+
+<h3>验证 Worker</h3>
+<pre><code><span class="cmt"># 在 Windows 上验证</span>
+curl http://localhost:<span class="kw">8001</span>/health
+
+<span class="cmt"># 预期输出</span>
+{
+  <span class="str">"status"</span>: <span class="str">"healthy"</span>,
+  <span class="str">"models_loaded"</span>: {<span class="str">"custom_voice"</span>: <span class="kw">false</span>, ...},
+  <span class="str">"gpu"</span>: {<span class="str">"gpu_name"</span>: <span class="str">"NVIDIA GeForce RTX 3060"</span>, <span class="str">"gpu_memory_total_mb"</span>: <span class="kw">12287</span>}
+}</code></pre>
+
+<h3>参数说明</h3>
+<table>
+<tr><th>参数</th><th>默认值</th><th>说明</th></tr>
+<tr><td><code>--host</code></td><td>0.0.0.0</td><td>监听地址</td></tr>
+<tr><td><code>--port</code></td><td>8001</td><td>监听端口</td></tr>
+<tr><td><code>--device</code></td><td>cuda:0</td><td>GPU 设备（<code>cpu</code> 可强制 CPU 模式）</td></tr>
+<tr><td><code>--preload</code></td><td>关闭</td><td>启动时预加载所有模型到显存</td></tr>
+<tr><td><code>--no-warmup</code></td><td>关闭</td><td>跳过预热（配合 --preload 使用）</td></tr>
+</table>
+</div>
+
+<!-- 2. API 流式输出 -->
+<div class="card">
+<h2>🌊 API 流式输出</h2>
+<p>流式输出通过 <strong>Server-Sent Events (SSE)</strong> 实现，生成完成后分块返回音频，减少客户端等待时间。</p>
+
+<h3>端点</h3>
+<table>
+<tr><th>功能</th><th>端点</th><th>方法</th></tr>
+<tr><td>CustomVoice 流式</td><td><code>/api/v1/custom-voice/generate-stream</code></td><td>POST</td></tr>
+<tr><td>VoiceDesign 流式</td><td><code>/api/v1/voice-design/generate-stream</code></td><td>POST</td></tr>
+<tr><td>VoiceClone 流式</td><td><code>/api/v1/base/clone-stream</code></td><td>POST</td></tr>
+</table>
+
+<h3>curl 示例</h3>
+<pre><code>curl -X POST http://<span class="kw">124.221.52.32</span>:<span class="kw">8000</span>/api/v1/custom-voice/generate-stream \
+  -H <span class="str">"Content-Type: application/json"</span> \
+  -d <span class="str">'{"text":"你好世界","language":"Chinese","speaker":"Serena"}'</span></code></pre>
+
+<h3>SSE 事件格式</h3>
+<pre><code><span class="cmt"># 1. 元数据事件（生成完成后发送）</span>
+event: metadata
+data: {<span class="str">"sample_rate"</span>:<span class="kw">24000</span>,<span class="str">"generation_time"</span>:<span class="kw">7.3</span>,<span class="str">"audio_duration"</span>:<span class="kw">2.3</span>}
+
+<span class="cmt"># 2. 音频块事件（每 0.5 秒一块，base64 编码的 WAV）</span>
+event: audio
+data: UklGRiQAAABXQVZFZm10...
+
+<span class="cmt"># 3. 完成事件</span>
+event: done
+data: complete</code></pre>
+
+<h3>JavaScript 示例</h3>
+<pre><code><span class="kw">const</span> response = <span class="kw">await</span> <span class="fn">fetch</span>(<span class="str">'/api/v1/custom-voice/generate-stream'</span>, {
+  method: <span class="str">'POST'</span>,
+  headers: {<span class="str">'Content-Type'</span>: <span class="str">'application/json'</span>},
+  body: <span class="kw">JSON</span>.<span class="fn">stringify</span>({
+    text: <span class="str">'你好世界'</span>,
+    language: <span class="str">'Chinese'</span>,
+    speaker: <span class="str">'Serena'</span>
+  })
+});
+
+<span class="kw">const</span> reader = response.body.<span class="fn">getReader</span>();
+<span class="kw">const</span> decoder = <span class="kw">new</span> <span class="fn">TextDecoder</span>();
+<span class="kw">const</span> audioChunks = [];
+<span class="kw">let</span> sampleRate = <span class="kw">24000</span>;
+
+<span class="kw">while</span> (<span class="kw">true</span>) {
+  <span class="kw">const</span> {done, value} = <span class="kw">await</span> reader.<span class="fn">read</span>();
+  <span class="kw">if</span> (done) <span class="kw">break</span>;
+  <span class="kw">const</span> text = decoder.<span class="fn">decode</span>(value);
+  <span class="kw">const</span> lines = text.<span class="fn">split</span>(<span class="str">'\n'</span>);
+  <span class="kw">for</span> (<span class="kw">const</span> line <span class="kw">of</span> lines) {
+    <span class="kw">if</span> (line.<span class="fn">startsWith</span>(<span class="str">'data: '</span>)) {
+      <span class="kw">const</span> data = line.<span class="fn">slice</span>(<span class="kw">6</span>);
+      <span class="kw">if</span> (data !== <span class="str">'complete'</span>) {
+        <span class="cmt">// base64 解码为 WAV blob</span>
+        <span class="kw">const</span> bytes = <span class="fn">atob</span>(data);
+        <span class="kw">const</span> buf = <span class="kw">new</span> <span class="fn">Uint8Array</span>(bytes.length);
+        <span class="kw">for</span> (<span class="kw">let</span> i = <span class="kw">0</span>; i &lt; bytes.length; i++)
+          buf[i] = bytes.<span class="fn">charCodeAt</span>(i);
+        audioChunks.<span class="fn">push</span>(buf);
+      }
+    }
+  }
+}
+
+<span class="cmt">// 合并所有音频块并播放</span>
+<span class="kw">const</span> blob = <span class="kw">new</span> <span class="fn">Blob</span>(audioChunks, {type: <span class="str">'audio/wav'</span>});
+audio.src = <span class="fn">URL</span>.<span class="fn">createObjectURL</span>(blob);
+audio.<span class="fn">play</span>();</code></pre>
+
+<div class="note">
+  <strong>💡 说明：</strong>当前实现的"流式"是<strong>伪流式</strong>--模型先生成完整音频，再分块发送。真正的流式推理（边生成边输出）需要 Qwen3-TTS 模型本身支持流式 token 生成，目前 <code>qwen-tts</code> 库尚未提供此能力。
+</div>
+</div>
+
+<!-- 3. 提高生成速度 -->
+<div class="card">
+<h2>⚡ 提高生成速度</h2>
+
+<h3>1. 预加载模型 <span class="tag tag-perf">推荐</span></h3>
+<p>Worker 启动时直接加载模型到显存，避免首次请求等待。</p>
+<pre><code>.venv\Scripts\python worker\start_worker.py --preload</code></pre>
+<p>代价：Worker 启动慢（约 10 秒），但首次请求和后续请求一样快。</p>
+
+<h3>2. 使用 Flash Attention 2 <span class="tag tag-perf">+30% 速度</span></h3>
+<p>Flash Attention 可以显著加速 Transformer 推理，减少显存占用。</p>
+<pre><code><span class="cmt"># Linux 上安装较简单</span>
+pip install flash-attn&gt;=<span class="kw">2.5.0</span> --no-build-isolation
+
+<span class="cmt"># Windows 上较困难，可选方案：</span>
+<span class="cmt"># 1. 使用预编译 wheel: https://github.com/bdashore3/FlashAttention-Windows</span>
+<span class="cmt"># 2. 使用 WSL2 + Linux 环境</span>
+<span class="cmt"># 3. 不装也可以用，Worker 会自动回退到标准 attention</span></code></pre>
+
+<h3>3. 减小模型精度 <span class="tag tag-perf">省显存</span></h3>
+<p>默认 <code>bfloat16</code>，可以改为 <code>float16</code> 进一步省显存（质量略降）。</p>
+<pre><code><span class="cmt"># 在 worker.py 或环境变量中设置</span>
+set MODEL_DTYPE=float16</code></pre>
+
+<h3>4. 短文本分段并行 <span class="tag tag-perf">长文本优化</span></h3>
+<p>对于长文本，可以在客户端按句号/逗号分段，并行发送多个请求。</p>
+<pre><code><span class="kw">import</span> asyncio, httpx
+
+<span class="kw">async def</span> <span class="fn">batch_generate</span>(texts, speaker=<span class="str">"Serena"</span>):
+    <span class="kw">async with</span> httpx.AsyncClient() <span class="kw">as</span> client:
+        tasks = [
+            client.<span class="fn">post</span>(<span class="str">"http://124.221.52.32:8000/api/v1/custom-voice/generate"</span>,
+                json={<span class="str">"text"</span>: t, <span class="str">"speaker"</span>: speaker, <span class="str">"response_format"</span>: <span class="str">"base64"</span>})
+            <span class="kw">for</span> t <span class="kw">in</span> texts
+        ]
+        results = <span class="kw">await</span> asyncio.<span class="fn">gather</span>(*tasks)
+        <span class="kw">return</span> [r.<span class="fn">json</span>() <span class="kw">for</span> r <span class="kw">in</span> results]
+
+<span class="cmt"># 使用</span>
+texts = [<span class="str">"第一句。"</span>, <span class="str">"第二句。"</span>, <span class="str">"第三句。"</span>]
+results = asyncio.<span class="fn">run</span>(<span class="fn">batch_generate</span>(texts))</code></pre>
+
+<h3>5. 性能参考</h3>
+<table>
+<tr><th>配置</th><th>首次请求</th><th>后续请求（5字）</th><th>后续请求（50字）</th><th>显存占用</th></tr>
+<tr><td>RTX 3060 12GB, bfloat16</td><td>~27s</td><td>~5s</td><td>~18s</td><td>~5.5GB</td></tr>
+<tr><td>RTX 3060 12GB, bfloat16 + Flash Attn</td><td>~20s</td><td>~3.5s</td><td>~13s</td><td>~4GB</td></tr>
+<tr><td>RTX 4090 24GB, bfloat16 + Flash Attn</td><td>~12s</td><td>~1.5s</td><td>~5s</td><td>~4GB</td></tr>
+</table>
+</div>
+
+<!-- 4. API 完整文档 -->
+<div class="card">
+<h2>📖 API 接口文档</h2>
+
+<h3>CustomVoice - 预设音色 <span class="tag tag-api">常用</span></h3>
+<pre><code><span class="cmt"># 生成语音（返回 WAV 文件）</span>
+POST /api/v1/custom-voice/generate
+
+{
+  <span class="str">"text"</span>: <span class="str">"你好世界"</span>,          <span class="cmt">// 必填，合成文本</span>
+  <span class="str">"language"</span>: <span class="str">"Chinese"</span>,      <span class="cmt">// 可选，默认 Auto</span>
+  <span class="str">"speaker"</span>: <span class="str">"Serena"</span>,        <span class="cmt">// 必填，音色名</span>
+  <span class="str">"instruct"</span>: <span class="str">"开心地说"</span>,      <span class="cmt">// 可选，情感指令</span>
+  <span class="str">"speed"</span>: <span class="kw">1.0</span>,               <span class="cmt">// 可选，0.5~2.0</span>
+  <span class="str">"response_format"</span>: <span class="str">"wav"</span>   <span class="cmt">// wav 或 base64</span>
+}
+
+<span class="cmt"># 批量生成</span>
+POST /api/v1/custom-voice/batch
+{<span class="str">"texts"</span>:[<span class="str">"第一句"</span>,<span class="str">"第二句"</span>], <span class="str">"languages"</span>:[<span class="str">"Chinese"</span>,<span class="str">"Chinese"</span>], <span class="str">"speakers"</span>:[<span class="str">"Serena"</span>,<span class="str">"Ryan"</span>]}
+
+<span class="cmt"># 查看可用音色</span>
+GET /api/v1/custom-voice/speakers
+
+<span class="cmt"># 查看支持语言</span>
+GET /api/v1/custom-voice/languages</code></pre>
+
+<h3>可用音色列表</h3>
+<table>
+<tr><th>音色</th><th>性别</th><th>语言</th><th>特点</th></tr>
+<tr><td>Vivian</td><td>女</td><td>中文</td><td>明亮、略带锐利</td></tr>
+<tr><td>Serena</td><td>女</td><td>中文</td><td>温暖、柔和</td></tr>
+<tr><td>Uncle_Fu</td><td>男</td><td>中文</td><td>成熟、低沉</td></tr>
+<tr><td>Dylan</td><td>男</td><td>中文(北京)</td><td>清朗、自然</td></tr>
+<tr><td>Eric</td><td>男</td><td>中文(四川)</td><td>活泼、微哑</td></tr>
+<tr><td>Ryan</td><td>男</td><td>英文</td><td>动感、节奏强</td></tr>
+<tr><td>Aiden</td><td>男</td><td>英文</td><td>阳光、中频清晰</td></tr>
+<tr><td>Ono_Anna</td><td>女</td><td>日语</td><td>俏皮、轻快</td></tr>
+<tr><td>Sohee</td><td>女</td><td>韩语</td><td>温暖、情感丰富</td></tr>
+</table>
+
+<h3>情感指令 (instruct) 示例</h3>
+<pre><code><span class="str">"Very happy"</span>          <span class="cmt"># 非常开心</span>
+<span class="str">"Angry tone"</span>          <span class="cmt"># 生气</span>
+<span class="str">"Speak in a sad voice"</span> <span class="cmt"># 悲伤</span>
+<span class="str">"Whisper"</span>             <span class="cmt"># 耳语</span>
+<span class="str">"Calm and professional"</span> <span class="cmt"># 专业平静</span></code></pre>
+</div>
+
+<!-- 5. 架构说明 -->
+<div class="card">
+<h2>🏗️ 架构说明</h2>
+<pre><code>┌──────────┐     HTTP/HTTPS      ┌─────────────────┐    WireGuard     ┌──────────────────┐
+│  客户端   │ ──────────────────→ │  VPS :8000      │ ──────────────→ │  Windows :8001   │
+│ 浏览器/App│    124.221.52.32    │  (业务层)        │   10.100.0.x     │  (GPU Worker)    │
+└──────────┘                     │                 │   ~20ms 延迟     │                  │
+                                 │  • API 鉴权     │                  │  • 模型加载      │
+                                 │  • Demo WebUI   │                  │  • GPU 推理      │
+                                 │  • 音频预处理   │                  │  • RTX 3060 12GB │
+                                 │  • 请求转发     │                  │                  │
+                                 │  • 无需 GPU     │                  │  • 无需公网IP    │
+                                 └─────────────────┘                  └──────────────────┘</code></pre>
+
+<h3>数据流</h3>
+<ol>
+  <li>客户端 → VPS:8000 发送 POST 请求</li>
+  <li>VPS 预处理音频（裁剪/去噪/归一化）</li>
+  <li>VPS → Worker:8001 通过 WireGuard 转发（HTTP，~20ms）</li>
+  <li>Worker 加载模型（首次）+ 执行推理</li>
+  <li>Worker 返回 WAV 音频</li>
+  <li>VPS 格式化响应 → 返回客户端</li>
+</ol>
+
+<h3>VPS 侧文件位置</h3>
+<pre><code>/home/ubuntu/qwen-tts-server/
+├── app/
+│   ├── main.py          <span class="cmt"># FastAPI 入口</span>
+│   ├── config.py         <span class="cmt"># 配置（含 REMOTE_MODE）</span>
+│   ├── webui.html        <span class="cmt"># WebUI 页面</span>
+│   ├── models/
+│   │   ├── manager.py       <span class="cmt"># 本地模型管理（原始）</span>
+│   │   └── remote_manager.py <span class="cmt"># 远程模型管理（VPS模式）</span>
+│   ├── routers/          <span class="cmt"># API 路由</span>
+│   └── utils/            <span class="cmt"># 工具函数</span>
+├── worker/              <span class="cmt"># Windows Worker 文件</span>
+├── .env                 <span class="cmt"># VPS 配置</span>
+└── requirements-vps.txt <span class="cmt"># VPS 依赖（不含 torch）</span></code></pre>
+</div>
+
+<!-- 6. 故障排查 -->
+<div class="card">
+<h2>🔧 故障排查</h2>
+
+<h3>Worker 连不上</h3>
+<pre><code><span class="cmt"># 1. 检查 WireGuard 隧道</span>
+ping <span class="kw">10.100.0.2</span>          <span class="cmt"># 从 VPS ping Windows</span>
+ping <span class="kw">10.100.0.1</span>          <span class="cmt"># 从 Windows ping VPS</span>
+
+<span class="cmt"># 2. 检查 Worker 是否运行</span>
+curl http://<span class="kw">10.100.0.2</span>:<span class="kw">8001</span>/health
+
+<span class="cmt"># 3. 检查 Windows 防火墙</span>
+<span class="cmt"># PowerShell（管理员）:</span>
+Get-NetFirewallRule -DisplayName <span class="str">"*SSH*"</span>
+New-NetFirewallRule -DisplayName <span class="str">"TTS Worker"</span> -Direction Inbound -LocalPort <span class="kw">8001</span> -Protocol TCP -Action Allow</code></pre>
+
+<h3>模型加载超时</h3>
+<div class="note warn">
+  如果 Windows 无法访问 <code>huggingface.co</code>，模型加载会反复超时。解决方案：
+  <ul>
+    <li>设置镜像：<code>set HF_ENDPOINT=https://hf-mirror.com</code></li>
+    <li>或开启代理后预下载模型：<code>python worker\download_models.py</code></li>
+    <li>注意：不能设 <code>HF_HUB_OFFLINE=1</code>，transformers 4.57.x 有 bug</li>
+  </ul>
+</div>
+
+<h3>NumPy 不兼容</h3>
+<pre><code><span class="cmt"># 报错: "A module compiled using NumPy 1.x cannot be run in NumPy 2.x"</span>
+pip install <span class="str">"numpy&lt;2"</span></code></pre>
+
+<h3>torchaudio WinError 127</h3>
+<pre><code><span class="cmt"># 报错: "OSError: [WinError 127] 找不到指定的程序"</span>
+<span class="cmt"># 原因: torchaudio 版本和 torch 不匹配</span>
+pip install torchaudio==<span class="kw">2.2.1</span> --index-url https://download.pytorch.org/whl/cu121</code></pre>
+
+<h3>VPS 路由问题（Docker 环境）</h3>
+<pre><code><span class="cmt"># 如果 wg-easy 运行在 Docker bridge 网络（非 host 模式）</span>
+<span class="cmt"># VPS 主机无法直接访问 10.100.0.x，需要添加路由 + NAT</span>
+
+<span class="cmt"># 1. 添加主机路由</span>
+WG_IP=$(docker inspect wg-easy --format <span class="str">'{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}'</span>)
+sudo ip route add <span class="kw">10.100.0.0</span>/<span class="kw">24</span> via $WG_IP
+
+<span class="cmt"># 2. 容器内添加 NAT（让主机源地址被 SNAT）</span>
+docker exec wg-easy iptables -t nat -A POSTROUTING -d <span class="kw">10.100.0.0</span>/<span class="kw">24</span> -j MASQUERADE</code></pre>
+
+<h3>WireGuard 隧道频繁断开</h3>
+<pre><code><span class="cmt"># 在 Windows 的 WireGuard 配置中添加 Keepalive</span>
+[Peer]
+...
+PersistentKeepalive = <span class="kw">25</span>   <span class="cmt"># 每25秒发心跳，防止 NAT 超时</span></code></pre>
+</div>
+
+<!-- 7. Python SDK 示例 -->
+<div class="card">
+<h2>🐍 Python 调用示例</h2>
+<pre><code><span class="kw">import</span> httpx
+
+API_URL = <span class="str">"http://124.221.52.32:8000"</span>
+
+<span class="cmt"># 基本生成</span>
+<span class="kw">with</span> httpx.Client() <span class="kw">as</span> client:
+    resp = client.<span class="fn">post</span>(<span class="str">f"{API_URL}/api/v1/custom-voice/generate"</span>,
+        json={<span class="str">"text"</span>: <span class="str">"你好世界"</span>, <span class="str">"speaker"</span>: <span class="str">"Serena"</span>, <span class="str">"response_format"</span>: <span class="str">"wav"</span>},
+        timeout=<span class="kw">300</span>)
+    <span class="kw">with</span> <span class="fn">open</span>(<span class="str">"output.wav"</span>, <span class="str">"wb"</span>) <span class="kw">as</span> f:
+        f.<span class="fn">write</span>(resp.content)
+
+<span class="cmt"># 异步批量生成</span>
+<span class="kw">import</span> asyncio
+
+<span class="kw">async def</span> <span class="fn">batch_tts</span>(texts):
+    <span class="kw">async with</span> httpx.AsyncClient() <span class="kw">as</span> client:
+        tasks = [
+            client.<span class="fn">post</span>(<span class="str">f"{API_URL}/api/v1/custom-voice/generate"</span>,
+                json={<span class="str">"text"</span>: t, <span class="str">"speaker"</span>: <span class="str">"Serena"</span>},
+                timeout=<span class="kw">300</span>)
+            <span class="kw">for</span> t <span class="kw">in</span> texts
+        ]
+        <span class="kw">return</span> <span class="kw">await</span> asyncio.<span class="fn">gather</span>(*tasks)
+
+results = asyncio.<span class="fn">run</span>(<span class="fn">batch_tts</span>([<span class="str">"第一句"</span>, <span class="str">"第二句"</span>]))</code></pre>
+</div>
+
+<div style="text-align:center;margin-top:24px;color:#555;font-size:13px">
+  Qwen3-TTS Server v1.1.2 | VPS + WireGuard + GPU Worker 架构<br>
+  <a href="/webui" style="color:#6c5ce7">返回 WebUI</a> · <a href="/docs" style="color:#6c5ce7">Swagger API</a>
+</div>
+</div>
+</body>
+</html>
