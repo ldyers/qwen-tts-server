@@ -1,0 +1,77 @@
+# =============================================================================
+# Qwen3-TTS VPS + wg-easy 联合部署（方案B：共享网络命名空间）
+# =============================================================================
+# 架构：
+#   TTS 容器 --network container:wg-easy--> 直接共享 wg-easy 的网络栈
+#   TTS 容器可直接访问 wg0 接口 (10.100.0.x)，无需主机路由和 NAT
+#
+# 使用方式：
+#   docker compose -f docker-compose.vps.yml up -d
+# =============================================================================
+
+services:
+  wg-easy:
+    image: ghcr.io/wg-easy/wg-easy:latest
+    container_name: wg-easy
+    environment:
+      - LANG=zh
+      - PORT=51821
+      - WG_PORT=51820
+      - WG_HOST=124.221.52.32
+      - WG_DEFAULT_ADDRESS=10.100.0.x
+      - WG_DEFAULT_DNS=119.29.29.29
+      - WG_ALLOWED_IPS=10.100.0.0/24
+      - WG_PERSISTENT_KEEPALIVE=25
+      - PASSWORD_HASH=$$2a$$12$$kI0NRO08DiYHjR.ZVf3i2uFrxOZtEPAA9HfVbpFDX3YZHryJICE2i
+      - WG_MAX_CLIENTS=10
+    volumes:
+      - /opt/1panel/docker/compose/wg-easy/data:/etc/wireguard
+    ports:
+      - "51820:51820/udp"
+      - "51821:51821/tcp"
+      - "8000:8000/tcp"
+    sysctls:
+      - net.ipv4.ip_forward=1
+      - net.ipv4.conf.all.src_valid_mark=1
+    cap_add:
+      - NET_ADMIN
+      - SYS_MODULE
+    restart: unless-stopped
+
+  qwen-tts:
+    build:
+      context: .
+      dockerfile: Dockerfile.vps
+    image: qwen-tts-server:latest
+    container_name: qwen-tts
+    # 共享 wg-easy 的网络命名空间
+    network_mode: "container:wg-easy"
+    environment:
+      - REMOTE_MODE=true
+      - WORKER_URL=http://10.100.0.2:8001
+      - WORKER_API_KEY=
+      - WORKER_TIMEOUT=600
+      - API_KEYS=
+      - HOST=0.0.0.0
+      - PORT=8000
+      - ENV=development
+      - LOG_LEVEL=INFO
+      - ENABLE_PERFORMANCE_LOGGING=true
+      - VOICE_CACHE_ENABLED=true
+      - VOICE_CACHE_MAX_SIZE=100
+      - VOICE_CACHE_TTL_SECONDS=3600
+      - AUDIO_PREPROCESSING_ENABLED=true
+      - REF_AUDIO_MAX_DURATION=15.0
+      - REF_AUDIO_TARGET_DURATION_MIN=5.0
+      - AUDIO_UPLOAD_MAX_SIZE_MB=5.0
+      - AUDIO_UPLOAD_MAX_DURATION=60.0
+    volumes:
+      - tts-output:/app/output
+      - /home/ubuntu/.ssh/qwen_worker_key:/root/.ssh/qwen_worker_key:ro
+    restart: unless-stopped
+    depends_on:
+      wg-easy:
+        condition: service_started
+
+volumes:
+  tts-output:
