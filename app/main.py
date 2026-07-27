@@ -199,11 +199,9 @@ async def danmu_page():
 
 @app.get("/danmu-tts")
 async def danmu_tts_page():
-    """弹幕TTS播报页面"""
-    return FileResponse(
-        Path(__file__).parent / "danmu_tts.html",
-        media_type="text/html"
-    )
+    """弹幕TTS播报已集成到弹幕后台，跳转到弹幕后台"""
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse(url="http://124.221.52.32:8080")
 
 
 @app.get("/docs-page")
