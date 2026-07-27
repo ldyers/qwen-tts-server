@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>弹幕TTS播报</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;background:#0f0f1e;color:#e0e0e0;min-height:100vh;padding:20px}
+.container{max-width:900px;margin:0 auto}
+.header{display:flex;align-items:center;justify-content:space-between;margin-bottom:24px}
+.header h1{font-size:22px;background:linear-gradient(135deg,#fe2c55,#6c5ce7);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.links a{color:#6c5ce7;text-decoration:none;font-size:13px;margin-left:12px}
+.panel{background:#1a1a2e;border-radius:14px;padding:20px;margin-bottom:16px;border:1px solid #222244}
+.row{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+input[type=text]{flex:1;min-width:150px;background:#12121f;border:1px solid #2a2a4a;border-radius:8px;padding:10px 14px;color:#e0e0e0;font-size:14px;outline:none}
+input[type=text]:focus{border-color:#fe2c55}
+.btn{padding:10px 24px;border:none;border-radius:8px;cursor:pointer;font-size:14px;font-weight:600;transition:all .2s}
+.btn-go{background:linear-gradient(135deg,#fe2c55,#ff5e7e);color:#fff}
+.btn-stop{background:#2a2a4a;color:#e0e0e0}
+.btn:hover{filter:brightness(1.1)}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+select{background:#12121f;border:1px solid #2a2a4a;border-radius:8px;padding:8px 12px;color:#e0e0e0;font-size:13px;cursor:pointer;outline:none}
+label{font-size:13px;color:#888}
+.cfg{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:10px;padding-top:10px;border-top:1px solid #2a2a4a}
+.stats{display:flex;gap:16px;margin:12px 0}
+.stat{flex:1;background:#12121f;border-radius:10px;padding:12px;text-align:center}
+.stat .v{font-size:24px;font-weight:700;color:#fe2c55}
+.stat .l{font-size:11px;color:#666;margin-top:2px}
+.list{max-height:400px;overflow-y:auto}
+.list::-webkit-scrollbar{width:5px}
+.list::-webkit-scrollbar-thumb{background:#2a2a4a;border-radius:3px}
+.item{display:flex;gap:8px;padding:8px 12px;border-radius:8px;margin-bottom:4px;animation:fadeIn .3s}
+.item:hover{background:#12121f}
+.item .ava{width:30px;height:30px;border-radius:50%;background:linear-gradient(135deg,#6c5ce7,#a29bfe);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;flex-shrink:0}
+.item .info{flex:1}
+.item .name{font-size:12px;color:#a29bfe}
+.item .text{font-size:14px}
+.item .t{font-size:10px;color:#555;flex-shrink:0}
+.item.playing{border-left:3px solid #00b894}
+@keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+.dot{width:8px;height:8px;border-radius:50%;background:#555;display:inline-block;margin-right:6px}
+.dot.on{background:#00b894;animation:pulse 1.5s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+</style>
+</head>
+<body>
+<div class="container">
+<div class="header">
+  <h1>📢 弹幕TTS播报</h1>
+  <div class="links">
+    <a href="/webui">🎙️TTS</a>
+    <a href="http://124.221.52.32:8080">📺弹幕后台</a>
+    <a href="/docs-page">📚文档</a>
+  </div>
+</div>
+
+<div class="panel">
+  <div class="row">
+    <label>弹幕后台地址</label>
+    <input type="text" id="danmuUrl" value="http://localhost:8080" style="flex:1">
+    <input type="text" id="danmuUser" value="admin" placeholder="账号" style="max-width:80px">
+    <input type="text" id="danmuPass" value="admin123" placeholder="密码" style="max-width:100px">
+  </div>
+  <div class="cfg">
+    <select id="speaker">
+      <option value="Serena">Serena 温柔女声</option>
+      <option value="Vivian">Vivian 明亮女声</option>
+      <option value="Uncle_Fu">Uncle_Fu 浑厚男声</option>
+      <option value="Dylan">Dylan 北京男声</option>
+      <option value="Ryan">Ryan 英文男声</option>
+    </select>
+    <select id="language">
+      <option value="Chinese">中文</option>
+      <option value="Auto">自动检测</option>
+    </select>
+    <select id="speed">
+      <option value="1.0">1.0x</option>
+      <option value="1.3">1.3x</option>
+      <option value="1.5">1.5x</option>
+    </select>
+    <label><input type="checkbox" id="skipEmoji" checked> 跳过纯表情</label>
+    <button class="btn btn-go" id="startBtn" onclick="start()">开始播报</button>
+    <button class="btn btn-stop" id="stopBtn" onclick="stop()" disabled>停止</button>
+  </div>
+</div>
+
+<div class="stats">
+  <div class="stat"><div class="v" id="sTotal">0</div><div class="l">已播报</div></div>
+  <div class="stat"><div class="v" id="sSkip">0</div><div class="l">已跳过</div></div>
+  <div class="stat"><div class="v" id="sQueue">0</div><div class="l">队列</div></div>
+</div>
+
+<div class="panel">
+  <div style="margin-bottom:8px"><span class="dot" id="dot"></span><span id="statusText">未启动</span></div>
+  <div class="list" id="list"><div style="text-align:center;color:#555;padding:40px">点击"开始播报"启动</div></div>
+</div>
+</div>
+
+<script>
+let polling = false;
+let lastId = 0;
+let ttsQueue = [];
+let isPlaying = false;
+let audio = new Audio();
+let stats = {total: 0, skip: 0};
+let pollTimer = null;
+
+async function start() {
+  polling = true;
+  lastId = 0;
+  stats = {total: 0, skip: 0};
+  document.getElementById('startBtn').disabled = true;
+  document.getElementById('stopBtn').disabled = false;
+  document.getElementById('dot').classList.add('on');
+  document.getElementById('statusText').textContent = '轮询中...';
+  document.getElementById('list').innerHTML = '';
+
+  // 先获取当前最新 ID
+  try {
+    const url = document.getElementById('danmuUrl').value;
+    const user = document.getElementById('danmuUser').value;
+    const pass = document.getElementById('danmuPass').value;
+    const r = await fetch(`${url}/api/history?limit=1`, {
+      headers: {'Authorization': 'Basic ' + btoa(`${user}:${pass}`)}
+    });
+    const data = await r.json();
+    if (data.length > 0) lastId = data[0].id;
+  } catch(e) {}
+
+  pollTimer = setInterval(poll, 2000);
+}
+
+function stop() {
+  polling = false;
+  if (pollTimer) clearInterval(pollTimer);
+  document.getElementById('startBtn').disabled = false;
+  document.getElementById('stopBtn').disabled = true;
+  document.getElementById('dot').classList.remove('on');
+  document.getElementById('statusText').textContent = '已停止';
+  ttsQueue = [];
+  audio.pause();
+  isPlaying = false;
+}
+
+async function poll() {
+  if (!polling) return;
+  try {
+    const url = document.getElementById('danmuUrl').value;
+    const user = document.getElementById('danmuUser').value;
+    const pass = document.getElementById('danmuPass').value;
+    const r = await fetch(`${url}/api/history?limit=50`, {
+      headers: {'Authorization': 'Basic ' + btoa(`${user}:${pass}`)}
+    });
+    const data = await r.json();
+
+    // 过滤聊天消息 + ID > lastId
+    const newChats = data.filter(d => d.msg_type === '聊天' && d.id > lastId);
+    if (newChats.length > 0) {
+      lastId = Math.max(...newChats.map(d => d.id));
+      for (const c of newChats) {
+        const text = c.content.trim();
+        const skipEmoji = document.getElementById('skipEmoji').checked;
+
+        // 跳过纯表情/纯符号
+        if (skipEmoji && /^[\[\]【】\(\)()😀-🙏🤗🥰😍🤣👍🔥❤️💪🎉🌹💋💖💙💚💛🧡💜🤝👏🫡😎🤔🙄😮💨😤😢😭😂🤪🥳😇🤩🥺😱😡💀🤡👏🙌✌️🤙👇👆👉👈💪✨💯🎊🎈]+\s*$/.test(text)) {
+          stats.skip++;
+          updateStats();
+          continue;
+        }
+        if (!text || text.length < 1) { stats.skip++; updateStats(); continue; }
+
+        ttsQueue.push({id: c.id, user: c.user_name, text: text, ts: c.ts});
+        addItem(c, false);
+      }
+      updateStats();
+      if (!isPlaying) playNext();
+    }
+  } catch(e) {}
+}
+
+async function playNext() {
+  if (ttsQueue.length === 0) { isPlaying = false; return; }
+  isPlaying = true;
+  if (ttsQueue.length > 8) ttsQueue = ttsQueue.slice(-8); // 限制队列
+  document.getElementById('sQueue').textContent = ttsQueue.length;
+
+  const item = ttsQueue.shift();
+  // 标记正在播放
+  const el = document.getElementById('item-' + item.id);
+  if (el) el.classList.add('playing');
+
+  try {
+    const speaker = document.getElementById('speaker').value;
+    const lang = document.getElementById('language').value;
+    const speed = parseFloat(document.getElementById('speed').value);
+    const resp = await fetch('/api/v1/custom-voice/generate', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({text: item.text, language: lang, speaker, speed, response_format: 'wav'})
+    });
+    if (resp.ok) {
+      const blob = await resp.blob();
+      audio.src = URL.createObjectURL(blob);
+      await audio.play();
+      stats.total++;
+      updateStats();
+      audio.onended = () => {
+        if (el) el.classList.remove('playing');
+        playNext();
+      };
+    } else {
+      if (el) el.classList.remove('playing');
+      playNext();
+    }
+  } catch(e) {
+    if (el) el.classList.remove('playing');
+    playNext();
+  }
+}
+
+function addItem(c, isPlaying) {
+  const list = document.getElementById('list');
+  if (list.querySelector('.empty')) list.innerHTML = '';
+  const div = document.createElement('div');
+  div.className = 'item';
+  div.id = 'item-' + c.id;
+  div.innerHTML = `<div class="ava">${(c.user_name||'?').charAt(0)}</div>
+    <div class="info"><div class="name">${c.user_name||'匿名'}</div><div class="text">${c.content}</div></div>
+    <div class="t">${c.ts||''}</div>`;
+  list.insertBefore(div, list.firstChild);
+  while (list.children.length > 100) list.removeChild(list.lastChild);
+}
+
+function updateStats() {
+  document.getElementById('sTotal').textContent = stats.total;
+  document.getElementById('sSkip').textContent = stats.skip;
+  document.getElementById('sQueue').textContent = ttsQueue.length;
+}
+</script>
+</body>
+</html>
