@@ -322,8 +322,12 @@ async def generate_custom_voice(req: GenerateCustomVoiceRequest):
             text=req.text,
             language=req.language,
             speaker=req.speaker,
-            instruct=req.instruct,
+            instruct=req.instruct if req.instruct else "",
         )
+        # 保护：截断异常长音频（超过 30 秒）
+        max_samples = sr * 30
+        if len(wavs[0]) > max_samples:
+            wavs = [wavs[0][:max_samples]]
 
         gen_time = time.time() - t0
         logger.info(f"CustomVoice generated in {gen_time:.2f}s, sr={sr}")
@@ -356,8 +360,12 @@ async def generate_custom_voice_batch(req: GenerateCustomVoiceRequest):
             text=req.text,
             language=req.language,
             speaker=req.speaker,
-            instruct=req.instruct,
+            instruct=req.instruct if req.instruct else "",
         )
+        # 保护：截断异常长音频（超过 30 秒）
+        max_samples = sr * 30
+        if len(wavs[0]) > max_samples:
+            wavs = [wavs[0][:max_samples]]
 
         gen_time = time.time() - t0
         logger.info(f"CustomVoice batch generated {len(wavs)} items in {gen_time:.2f}s")
