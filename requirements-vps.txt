@@ -1,0 +1,30 @@
+# VPS 侧依赖（远程模式，不需要 torch / qwen-tts / flash-attn）
+# 仅需要 FastAPI + 音频处理 + HTTP 客户端
+
+# Audio processing
+soundfile>=0.12.1
+numpy>=1.24.0
+
+# API framework
+fastapi>=0.110.0
+uvicorn[standard]>=0.27.0
+pydantic>=2.6.0
+pydantic-settings>=2.1.0
+python-multipart>=0.0.9
+python-dotenv>=1.0.0
+aiofiles>=23.2.1
+sse-starlette>=2.0.0
+httpx>=0.26.0
+
+# Audio preprocessing (可选，VPS 上做预处理)
+pydub>=0.25.1
+librosa>=0.10.1
+
+# File validation
+python-magic>=0.4.27
+
+# Danmu (douyin live chat)
+websocket-client>=1.7.0
+betterproto>=2.0.0b6
+PyExecJS>=1.5.1
+mini_racer>=0.12.4
